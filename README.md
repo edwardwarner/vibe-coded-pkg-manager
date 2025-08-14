@@ -1,6 +1,6 @@
 # Vibe Coded Python Package Manager
 
-A smart Python package manager that finds optimal package combinations for your environment and generates installation scripts. Features both sequential and high-performance parallel processing for handling packages of any scale, with intelligent conflict resolution and Python version compatibility.
+A smart Python package manager that finds optimal package combinations for your environment and generates installation scripts. Features automatic processing method selection, intelligent conflict resolution, and Python version compatibility testing.
 
 ## Features
 
@@ -10,6 +10,7 @@ A smart Python package manager that finds optimal package combinations for your 
 - **Conflict Resolution Strategies**: Multiple strategies for handling package conflicts (auto, manual, ignore, fail)
 - **Environment Support**: Works with different Python versions and platforms
 - **Script Generation**: Outputs bash scripts to create virtual environments and install packages
+- **Automatic Processing Selection**: Intelligently chooses between sequential and parallel processing based on package count
 - **Parallel Processing**: High-performance parallel resolution for large package lists
 - **Configurable Workers**: Adjustable number of parallel workers for optimal performance
 - **Built-in Benchmarking**: Test different worker counts to find optimal performance
@@ -33,12 +34,16 @@ pip install -e .
 
 ### Basic Usage
 
-```bash
-# Sequential resolution (small to medium package lists)
-python pkg_manager.py resolve --packages "requests>=2.31.0,pandas>=1.5.0" --python-version "3.9"
+The package manager automatically chooses the optimal processing method based on package count:
 
-# Parallel resolution (large package lists)
-python pkg_manager_parallel.py resolve --packages "requests,pandas,numpy,scipy,matplotlib" --max-workers 10
+```bash
+# Automatic processing (sequential for <5 packages, parallel for ≥5 packages)
+python pkg_manager.py resolve --packages "requests,pandas"
+python pkg_manager.py resolve --packages "requests,pandas,numpy,scipy,matplotlib,seaborn"
+
+# Force specific processing method
+python pkg_manager.py resolve --packages "requests,pandas" --force-parallel
+python pkg_manager.py resolve --packages "requests,pandas,numpy,scipy,matplotlib" --force-sequential
 ```
 
 ### Conflict Resolution
@@ -83,7 +88,7 @@ This will:
 ### Advanced Usage
 
 ```bash
-# Sequential with conflict resolution
+# With conflict resolution
 python pkg_manager.py resolve \
   --packages "requests>=2.31.0,pandas>=1.5.0,numpy>=1.21.0" \
   --python-version "3.9" \
@@ -91,8 +96,8 @@ python pkg_manager.py resolve \
   --prefer-latest \
   --output-dir "./my_project"
 
-# Parallel with custom configuration and conflict handling
-python pkg_manager_parallel.py resolve \
+# With custom configuration and conflict handling
+python pkg_manager.py resolve \
   --packages "requests,pandas,numpy,scipy,matplotlib,seaborn" \
   --max-workers 20 \
   --timeout 15 \
@@ -102,20 +107,23 @@ python pkg_manager_parallel.py resolve \
 
 ### Parallel Processing (High Performance)
 
-For large package lists, use the parallel version:
+The package manager automatically uses parallel processing for large package lists:
 
 ```bash
-# Basic parallel resolution
-python pkg_manager_parallel.py resolve --packages "requests,pandas,numpy,scipy,matplotlib" --max-workers 10
+# Automatic parallel processing for ≥5 packages
+python pkg_manager.py resolve --packages "requests,pandas,numpy,scipy,matplotlib" --max-workers 10
+
+# Force parallel processing regardless of package count
+python pkg_manager.py resolve --packages "requests,pandas" --force-parallel --max-workers 10
 
 # High-performance resolution with 20 workers
-python pkg_manager_parallel.py resolve --input-file large_packages.txt --max-workers 20
+python pkg_manager.py resolve --input-file large_packages.txt --max-workers 20
 
 # Benchmark different worker counts
-python pkg_manager_parallel.py benchmark --packages "requests,pandas,numpy,scipy,matplotlib" --workers "1,5,10,20"
+python pkg_manager.py benchmark --packages "requests,pandas,numpy,scipy,matplotlib" --workers "1,5,10,20"
 
 # Custom timeout and worker configuration
-python pkg_manager_parallel.py resolve --packages "..." --max-workers 15 --timeout 20
+python pkg_manager.py resolve --packages "..." --max-workers 15 --timeout 20
 ```
 
 ### Input File Usage
@@ -129,11 +137,8 @@ numpy>=1.21.0
 
 Then run:
 ```bash
-# Sequential resolution from file
+# Automatic processing method selection
 python pkg_manager.py resolve --input-file packages.txt --python-version "3.9"
-
-# Parallel resolution from file
-python pkg_manager_parallel.py resolve --input-file packages.txt --max-workers 10
 ```
 
 ## Output
@@ -184,15 +189,17 @@ Generated files:
 
 ## Performance
 
-The package manager includes parallel processing capabilities for handling large package lists:
+The package manager includes intelligent processing method selection and parallel processing capabilities:
 
-- **Sequential Version**: Standard resolution for small to medium package lists
-- **Parallel Version**: High-performance resolution using configurable worker threads
+- **Automatic Selection**: Chooses optimal processing method based on package count (<5: sequential, ≥5: parallel)
+- **Sequential Processing**: Fast resolution for small package lists with minimal overhead
+- **Parallel Processing**: High-performance resolution using configurable worker threads
 - **Benchmarking**: Built-in tool to test different worker counts and find optimal performance
 - **Scalability**: Significantly faster resolution for large package lists (30+ packages)
 
 ### Performance Examples
-- **5 packages**: ~1 second with 10 workers (vs ~3 seconds sequential)
+- **2-4 packages**: ~1-3 seconds sequential (optimal for small lists)
+- **5+ packages**: ~1 second with 10 workers (vs ~3 seconds sequential)
 - **30+ packages**: ~9 seconds with 20 workers (vs ~30+ seconds sequential)
 - **Large lists**: 3-10x faster with parallel processing
 
@@ -221,33 +228,16 @@ pkg-manager/
 │   ├── generators/      # Script generators
 │   └── core/           # Core functionality and CLI
 ├── tests/              # Test suite and example files
-├── pkg_manager.py      # Sequential CLI
-└── pkg_manager_parallel.py  # Parallel CLI
+└── pkg_manager.py      # Main CLI (automatic processing selection)
 ```
 
 ## Additional Features
 
 ### Command Line Options
 
-#### Sequential Package Manager (`pkg_manager.py`)
+#### Package Manager (`pkg_manager.py`)
 ```bash
 python pkg_manager.py resolve [OPTIONS]
-  --packages TEXT        Comma-separated list of packages
-  --input-file TEXT      File containing package specifications
-  --python-version TEXT  Target Python version [default: 3.9]
-  --platform TEXT        Target platform [default: any]
-  --output-dir TEXT      Output directory [default: .]
-  --venv-name TEXT       Virtual environment name [default: venv]
-  --quiet                Suppress output display
-  --requirements-only    Generate only requirements.txt
-  --conflict-strategy TEXT Strategy for resolving conflicts (auto, manual, ignore, fail) [default: auto]
-  --prefer-latest        Prefer latest versions when resolving conflicts [default: True]
-  --allow-downgrade      Allow downgrading packages to resolve conflicts
-```
-
-#### Parallel Package Manager (`pkg_manager_parallel.py`)
-```bash
-python pkg_manager_parallel.py resolve [OPTIONS]
   --packages TEXT        Comma-separated list of packages
   --input-file TEXT      File containing package specifications
   --python-version TEXT  Target Python version [default: 3.9]
@@ -261,24 +251,53 @@ python pkg_manager_parallel.py resolve [OPTIONS]
   --conflict-strategy TEXT Strategy for resolving conflicts (auto, manual, ignore, fail) [default: auto]
   --prefer-latest        Prefer latest versions when resolving conflicts [default: True]
   --allow-downgrade      Allow downgrading packages to resolve conflicts
+  --force-sequential     Force sequential processing regardless of package count
+  --force-parallel       Force parallel processing regardless of package count
 ```
 
 ### Utility Commands
 
 ```bash
-# Display information about the package manager
+# Display information and examples
 python pkg_manager.py info
-python pkg_manager_parallel.py info
-
-# Show usage examples
 python pkg_manager.py example
-python pkg_manager_parallel.py example
 
 # Benchmark performance
-python pkg_manager_parallel.py benchmark --packages "requests,pandas,numpy" --workers "1,5,10,20"
+python pkg_manager.py benchmark --packages "requests,pandas,numpy" --workers "1,5,10,20"
 
 # Test compatibility across Python versions
-python pkg_manager_parallel.py test-versions --packages "requests,pandas,numpy" --python-versions "3.8,3.9,3.10,3.11"
+python pkg_manager.py test-versions --packages "requests,pandas,numpy" --python-versions "3.8,3.9,3.10,3.11"
+```
+
+## Automatic Processing Selection
+
+The package manager intelligently chooses the optimal processing method based on package count:
+
+### Processing Logic
+- **Sequential Processing**: Used for <5 packages (fast for small lists)
+- **Parallel Processing**: Used for ≥5 packages (optimal for large lists)
+- **Configurable Threshold**: Default threshold is 5 packages
+- **Override Options**: Force specific processing method with `--force-sequential` or `--force-parallel`
+
+### Benefits
+- **Optimal Performance**: Automatically uses the fastest method for your package count
+- **Simplified Usage**: No need to choose between sequential and parallel manually
+- **Flexible Override**: Can force specific processing when needed
+- **Transparent Selection**: Shows which method is being used and why
+
+### Examples
+```bash
+# Automatic selection (2 packages → sequential)
+python pkg_manager.py resolve --packages "requests,pandas"
+# Output: "🔄 Using sequential processing for 2 packages (threshold: 5)"
+
+# Automatic selection (6 packages → parallel)
+python pkg_manager.py resolve --packages "requests,pandas,numpy,scipy,matplotlib,seaborn"
+# Output: "🔄 Using parallel processing for 6 packages (threshold: 5)"
+
+# Force override
+python pkg_manager.py resolve --packages "requests,pandas" --force-parallel
+python pkg_manager.py resolve --packages "requests,pandas,numpy,scipy,matplotlib" --force-sequential
 ```
 
 ## Conflict Resolution Strategies
@@ -320,20 +339,16 @@ Run the test suite to verify functionality:
 # Run all tests
 python tests/test_pkg_manager.py
 
-# Test sequential resolution
+# Test basic functionality
 python pkg_manager.py resolve --packages "requests,pandas" --python-version "3.9"
-
-# Test parallel resolution
-python pkg_manager_parallel.py resolve --packages "requests,pandas,numpy" --max-workers 5
-
-# Test file input
+python pkg_manager.py resolve --packages "requests,pandas,numpy,scipy,matplotlib" --max-workers 5
 python pkg_manager.py resolve --input-file tests/example_packages.txt
 
 # Test conflict resolution
-python pkg_manager_parallel.py resolve --packages "django>=4.0.0,django<3.0.0" --conflict-strategy auto
+python pkg_manager.py resolve --packages "django>=4.0.0,django<3.0.0" --conflict-strategy auto
 
 # Test multi-version compatibility
-python pkg_manager_parallel.py test-versions --packages "requests,pandas" --python-versions "3.8,3.9,3.10"
+python pkg_manager.py test-versions --packages "requests,pandas" --python-versions "3.8,3.9,3.10"
 ```
 
 ## Supported Python Versions
