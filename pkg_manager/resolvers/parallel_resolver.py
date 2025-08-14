@@ -90,55 +90,70 @@ class ParallelDependencyResolver:
     def _resolve_packages_parallel(self, specs: List[PackageSpec], environment: Environment):
         """Resolve multiple packages in parallel."""
         # First, resolve all direct packages in parallel
-        direct_packages = [(spec.name, spec) for spec in specs]
+        direct_packages = [(spec, environment) for spec in specs]
         
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all package resolution tasks
             future_to_package = {
-                executor.submit(self._resolve_package_worker, package_name, spec, environment): package_name
-                for package_name, spec in direct_packages
+                executor.submit(self._resolve_package_worker, spec, environment): spec
+                for spec, environment in direct_packages
             }
             
             # Collect results as they complete
             for future in as_completed(future_to_package):
-                package_name = future_to_package[future]
+                spec = future_to_package[future]
                 try:
                     resolved_package = future.result()
                     if resolved_package:
-                        self.resolved_packages[package_name] = resolved_package
+                        self.resolved_packages[spec.name] = resolved_package
                 except Exception as e:
-                    print(f"Warning: Error resolving {package_name}: {e}")
+                    print(f"Warning: Error resolving {spec.name}: {e}")
     
-    def _resolve_package_worker(self, package_name: str, spec: PackageSpec, environment: Environment) -> Optional[ResolvedPackage]:
-        """Worker function for resolving a single package."""
-        if package_name in self.resolved_packages:
-            return self.resolved_packages[package_name]
+    def _resolve_package_worker(self, spec: PackageSpec, environment: Environment) -> Optional[ResolvedPackage]:
+        """Resolve a single package and its dependencies (worker function)."""
+        if spec.name in self.resolved_packages:
+            return self.resolved_packages[spec.name]
         
-        # Find compatible versions
-        compatible_versions = self.pypi_client.find_compatible_versions(package_name, spec)
+        # Find Python-compatible versions first
+        compatible_versions = self.pypi_client.find_python_compatible_versions(
+            spec.name, environment.python_version, spec
+        )
         
         if not compatible_versions:
-            print(f"Warning: No compatible versions found for {package_name}")
-            return None
+            # Fallback to original method if no Python-compatible versions found
+            compatible_versions = self.pypi_client.find_compatible_versions(spec.name, spec)
+            if not compatible_versions:
+                print(f"Warning: No compatible versions found for {spec.name}")
+                return None
+            else:
+                print(f"Warning: No Python {environment.python_version} compatible versions found for {spec.name}, using latest available")
         
         # Select the latest compatible version
         selected_version = compatible_versions[-1]
         
-        # Check Python compatibility
-        if not self.pypi_client.check_python_compatibility(package_name, selected_version, environment.python_version):
-            print(f"Warning: {package_name} {selected_version} may not be compatible with Python {environment.python_version}")
+        # Verify Python compatibility (should be True if we used find_python_compatible_versions)
+        is_compatible = self.pypi_client.check_python_compatibility(spec.name, selected_version, environment.python_version)
+        if not is_compatible:
+            print(f"Warning: {spec.name} {selected_version} may not be compatible with Python {environment.python_version}")
+        else:
+            print(f"✅ {spec.name} {selected_version} is compatible with Python {environment.python_version}")
         
         # Create resolved package
         resolved_package = ResolvedPackage(
-            name=package_name,
+            name=spec.name,
             version=selected_version,
             is_direct=True
         )
         
-        # Resolve dependencies in parallel
-        dependencies = self.pypi_client.get_dependencies(package_name, selected_version)
-        if dependencies:
-            self._resolve_dependencies_parallel(dependencies, environment, resolved_package)
+        self.resolved_packages[spec.name] = resolved_package
+        
+        # Resolve dependencies
+        dependencies = self.pypi_client.get_dependencies(spec.name, selected_version)
+        for dep in dependencies:
+            dep_spec = self._parse_dependency_string(dep)
+            if dep_spec:
+                self._resolve_package_worker(dep_spec, environment)
+                resolved_package.dependencies.append(dep_spec.name)
         
         return resolved_package
     
@@ -237,22 +252,22 @@ class ParallelDependencyResolver:
             tree[package.name] = package.dependencies
         return tree
     
-    def optimize_versions(self, resolution_result: ResolutionResult) -> ResolutionResult:
+    def optimize_versions(self, resolution_result: ResolutionResult, environment: Environment = None) -> ResolutionResult:
         """Optimize package versions for better compatibility using parallel processing."""
         start_time = time.time()
         
         # Prepare package optimization tasks
         optimization_tasks = []
         for package in resolution_result.packages:
-            optimization_tasks.append((package.name, package))
+            optimization_tasks.append((package.name, package, environment))
         
         optimized_packages = []
         
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all optimization tasks
             future_to_package = {
-                executor.submit(self._optimize_package_worker, package_name, package): package_name
-                for package_name, package in optimization_tasks
+                executor.submit(self._optimize_package_worker, package_name, package, environment): package_name
+                for package_name, package, environment in optimization_tasks
             }
             
             # Collect results as they complete
@@ -276,17 +291,23 @@ class ParallelDependencyResolver:
             dependency_tree=resolution_result.dependency_tree
         )
     
-    def _optimize_package_worker(self, package_name: str, package: ResolvedPackage) -> Optional[ResolvedPackage]:
+    def _optimize_package_worker(self, package_name: str, package: ResolvedPackage, environment: Environment = None) -> Optional[ResolvedPackage]:
         """Worker function for optimizing a single package version."""
-        # Try to find a more recent version that's still compatible
-        available_versions = self.pypi_client.get_available_versions(package_name)
-        
-        # Find the latest version that satisfies all constraints
+        # Keep the current version if it's already Python-compatible
         best_version = package.version
-        for version in reversed(available_versions):
-            if self._is_version_compatible(package_name, version):
-                best_version = version
-                break
+        
+        # Only try to optimize if we have environment info and the current version isn't optimal
+        if environment:
+            # Try to find a more recent version that's still Python-compatible
+            compatible_versions = self.pypi_client.find_python_compatible_versions(
+                package_name, environment.python_version
+            )
+            
+            # Find the latest compatible version that satisfies all constraints
+            for version in reversed(compatible_versions):
+                if self._is_version_compatible(package_name, version):
+                    best_version = version
+                    break
         
         optimized_package = ResolvedPackage(
             name=package.name,

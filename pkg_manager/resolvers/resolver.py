@@ -85,19 +85,29 @@ class DependencyResolver:
         if spec.name in self.resolved_packages:
             return self.resolved_packages[spec.name]
         
-        # Find compatible versions
-        compatible_versions = self.pypi_client.find_compatible_versions(spec.name, spec)
+        # Find Python-compatible versions first
+        compatible_versions = self.pypi_client.find_python_compatible_versions(
+            spec.name, environment.python_version, spec
+        )
         
         if not compatible_versions:
-            print(f"Warning: No compatible versions found for {spec.name}")
-            return None
+            # Fallback to original method if no Python-compatible versions found
+            compatible_versions = self.pypi_client.find_compatible_versions(spec.name, spec)
+            if not compatible_versions:
+                print(f"Warning: No compatible versions found for {spec.name}")
+                return None
+            else:
+                print(f"Warning: No Python {environment.python_version} compatible versions found for {spec.name}, using latest available")
         
         # Select the latest compatible version
         selected_version = compatible_versions[-1]
         
-        # Check Python compatibility
-        if not self.pypi_client.check_python_compatibility(spec.name, selected_version, environment.python_version):
+        # Verify Python compatibility (should be True if we used find_python_compatible_versions)
+        is_compatible = self.pypi_client.check_python_compatibility(spec.name, selected_version, environment.python_version)
+        if not is_compatible:
             print(f"Warning: {spec.name} {selected_version} may not be compatible with Python {environment.python_version}")
+        else:
+            print(f"✅ {spec.name} {selected_version} is compatible with Python {environment.python_version}")
         
         # Create resolved package
         resolved_package = ResolvedPackage(
@@ -153,7 +163,7 @@ class DependencyResolver:
             tree[package.name] = package.dependencies
         return tree
     
-    def optimize_versions(self, resolution_result: ResolutionResult) -> ResolutionResult:
+    def optimize_versions(self, resolution_result: ResolutionResult, environment: Environment = None) -> ResolutionResult:
         """Optimize package versions for better compatibility."""
         # This is a simplified optimization - in a real implementation,
         # you might want to use more sophisticated algorithms
@@ -161,15 +171,21 @@ class DependencyResolver:
         optimized_packages = []
         
         for package in resolution_result.packages:
-            # Try to find a more recent version that's still compatible
-            available_versions = self.pypi_client.get_available_versions(package.name)
-            
-            # Find the latest version that satisfies all constraints
+            # Keep the current version if it's already Python-compatible
             best_version = package.version
-            for version in reversed(available_versions):
-                if self._is_version_compatible(package.name, version):
-                    best_version = version
-                    break
+            
+            # Only try to optimize if we have environment info and the current version isn't optimal
+            if environment:
+                # Try to find a more recent version that's still Python-compatible
+                compatible_versions = self.pypi_client.find_python_compatible_versions(
+                    package.name, environment.python_version
+                )
+                
+                # Find the latest compatible version that satisfies all constraints
+                for version in reversed(compatible_versions):
+                    if self._is_version_compatible(package.name, version):
+                        best_version = version
+                        break
             
             optimized_package = ResolvedPackage(
                 name=package.name,

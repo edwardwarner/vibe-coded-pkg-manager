@@ -37,10 +37,10 @@ setup(
     install_requires=[
         "requests>=2.31.0",
         "packaging>=23.0",
-        "click>=8.1.0",
         "rich>=13.0.0",
         "pydantic>=2.0.0",
         "typer>=0.9.0",
+        "aiohttp>=3.8.0",
     ],
     entry_points={
         "console_scripts": [

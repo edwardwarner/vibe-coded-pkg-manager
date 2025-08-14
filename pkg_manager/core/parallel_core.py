@@ -47,7 +47,7 @@ class ParallelPackageManager:
         result = self.resolver.resolve_dependencies(package_specs, environment)
         
         # Optimize versions
-        optimized_result = self.resolver.optimize_versions(result)
+        optimized_result = self.resolver.optimize_versions(result, environment)
         
         total_time = time.time() - start_time
         self.console.print(f"[bold green]Total resolution time: {total_time:.2f} seconds[/bold green]")

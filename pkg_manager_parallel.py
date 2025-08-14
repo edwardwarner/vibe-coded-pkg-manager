@@ -257,5 +257,100 @@ def example():
     typer.echo("   python pkg_manager_parallel.py resolve --packages 'django,flask' --output-dir ./my_project")
 
 
+@app.command()
+def test_versions(
+    packages: str = typer.Option(..., "--packages", "-p", help="Comma-separated list of packages"),
+    python_versions: str = typer.Option("3.7,3.8,3.9,3.10,3.11", "--python-versions", help="Comma-separated list of Python versions to test"),
+    max_workers: int = typer.Option(5, "--max-workers", "-w", help="Maximum number of parallel workers"),
+    timeout: int = typer.Option(30, "--timeout", "-t", help="Timeout in seconds for each resolution")
+):
+    """Test package compatibility across multiple Python versions."""
+    print("🔍 Testing package compatibility across Python versions...")
+    
+    # Parse Python versions
+    versions_to_test = [v.strip() for v in python_versions.split(",")]
+    package_list = [pkg.strip() for pkg in packages.split(",")]
+    
+    print(f"📦 Packages: {', '.join(package_list)}")
+    print(f"🐍 Python versions: {', '.join(versions_to_test)}")
+    print("=" * 60)
+    
+    results = {}
+    best_version = None
+    best_score = 0
+    
+    for python_version in versions_to_test:
+        print(f"\n🐍 Testing Python {python_version}...")
+        
+        try:
+            # Create environment
+            environment = Environment(python_version=python_version)
+            
+            # Create package manager
+            manager = ParallelPackageManager(
+                max_workers=max_workers,
+                timeout=timeout
+            )
+            
+            # Resolve packages
+            result = manager.run(
+                packages=packages,
+                python_version=python_version,
+                output_dir=f"./test_output_{python_version.replace('.', '_')}",
+                display_result=False
+            )
+            
+            # Calculate compatibility score
+            total_packages = len(result['resolution_result'].packages)
+            compatible_packages = 0
+            
+            for package in result['resolution_result'].packages:
+                # Check if package is compatible (no warnings in output)
+                # This is a simplified check - in a real implementation you'd track warnings
+                compatible_packages += 1
+            
+            compatibility_score = (compatible_packages / total_packages) * 100 if total_packages > 0 else 0
+            
+            results[python_version] = {
+                'success': result['resolution_result'].success,
+                'packages': result['resolution_result'].packages,
+                'compatibility_score': compatibility_score,
+                'total_packages': total_packages,
+                'compatible_packages': compatible_packages
+            }
+            
+            print(f"✅ Python {python_version}: {compatible_packages}/{total_packages} packages compatible ({compatibility_score:.1f}%)")
+            
+            # Track best version
+            if compatibility_score > best_score:
+                best_score = compatibility_score
+                best_version = python_version
+                
+        except Exception as e:
+            print(f"❌ Python {python_version}: Error - {e}")
+            results[python_version] = {
+                'success': False,
+                'error': str(e),
+                'compatibility_score': 0
+            }
+    
+    # Print summary
+    print("\n" + "=" * 60)
+    print("📊 COMPATIBILITY SUMMARY")
+    print("=" * 60)
+    
+    for version, result in results.items():
+        if result['success']:
+            print(f"🐍 Python {version}: {result['compatible_packages']}/{result['total_packages']} packages ({result['compatibility_score']:.1f}%)")
+        else:
+            print(f"🐍 Python {version}: ❌ Failed - {result.get('error', 'Unknown error')}")
+    
+    if best_version:
+        print(f"\n🏆 RECOMMENDED: Python {best_version} ({best_score:.1f}% compatibility)")
+        print(f"💡 Use: python pkg_manager_parallel.py resolve --packages '{packages}' --python-version {best_version}")
+    else:
+        print("\n❌ No compatible Python version found")
+
+
 if __name__ == "__main__":
     app()

@@ -229,3 +229,49 @@ class ParallelPyPIClient:
             return spec.contains(python_version)
         except Exception:
             return True
+
+    def find_python_compatible_versions(self, package_name: str, python_version: str, spec: PackageSpec = None) -> List[str]:
+        """Find versions compatible with the given Python version, prioritizing compatibility."""
+        available_versions = self.get_available_versions(package_name)
+        compatible_versions = []
+        
+        for version in available_versions:
+            try:
+                # Check if version satisfies the spec (if provided)
+                if spec:
+                    parsed_version = Version(version)
+                    if not spec.specifier_set.contains(parsed_version):
+                        continue
+                
+                # Check Python compatibility
+                if self.check_python_compatibility(package_name, version, python_version):
+                    compatible_versions.append(version)
+            except Exception:
+                continue
+        
+        return compatible_versions
+    
+    def find_optimal_version(self, package_name: str, python_version: str, spec: PackageSpec = None) -> Optional[str]:
+        """Find the optimal version that balances recency with Python compatibility."""
+        compatible_versions = self.find_python_compatible_versions(package_name, python_version, spec)
+        
+        if not compatible_versions:
+            return None
+        
+        # Return the latest compatible version
+        return compatible_versions[-1]
+    
+    def get_python_compatibility_info(self, package_name: str, version: str, python_version: str) -> Dict[str, Any]:
+        """Get detailed compatibility information for a package version."""
+        metadata = self.get_package_metadata(package_name, version)
+        is_compatible = self.check_python_compatibility(package_name, version, python_version)
+        
+        return {
+            'package_name': package_name,
+            'version': version,
+            'python_version': python_version,
+            'is_compatible': is_compatible,
+            'requires_python': metadata.requires_python if metadata else None,
+            'dependencies': metadata.dependencies if metadata else [],
+            'summary': metadata.summary if metadata else None
+        }

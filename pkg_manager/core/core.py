@@ -42,7 +42,7 @@ class PackageManager:
         result = self.resolver.resolve_dependencies(package_specs, environment)
         
         # Optimize versions
-        optimized_result = self.resolver.optimize_versions(result)
+        optimized_result = self.resolver.optimize_versions(result, environment)
         
         return optimized_result
     
