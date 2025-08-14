@@ -1,0 +1,17 @@
+# Example packages file for the Python Package Manager
+# Each line should contain a package specification
+
+# Web development
+requests>=2.31.0
+flask>=2.3.0
+
+# Data science
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Testing
+pytest>=7.0.0
+
+# Code quality
+black>=23.0.0
+flake8>=6.0.0 
