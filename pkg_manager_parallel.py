@@ -9,12 +9,13 @@ import sys
 import typer
 from typing import List, Optional
 from pathlib import Path
+import time
 
-# Add the current directory to the path so we can import our package
+# Add the current directory to the path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from pkg_manager.core import ParallelPackageManager
-from pkg_manager.models import Environment
+from pkg_manager.models import Environment, ConflictResolutionStrategy
 
 app = typer.Typer(
     name="pkg-manager-parallel",
@@ -74,6 +75,21 @@ def resolve(
         False,
         "--requirements-only", "-r",
         help="Generate only requirements.txt file"
+    ),
+    conflict_strategy: str = typer.Option(
+        "auto",
+        "--conflict-strategy", "-c",
+        help="Strategy for resolving package conflicts (auto, manual, ignore, fail)"
+    ),
+    prefer_latest: bool = typer.Option(
+        True,
+        "--prefer-latest",
+        help="Prefer latest versions when resolving conflicts"
+    ),
+    allow_downgrade: bool = typer.Option(
+        False,
+        "--allow-downgrade",
+        help="Allow downgrading packages to resolve conflicts"
     )
 ):
     """
@@ -92,6 +108,13 @@ def resolve(
     """
     
     try:
+        # Create conflict resolution strategy
+        strategy = ConflictResolutionStrategy(
+            strategy=conflict_strategy,
+            prefer_latest=prefer_latest,
+            allow_downgrade=allow_downgrade
+        )
+        
         # Initialize parallel package manager
         manager = ParallelPackageManager(max_workers=max_workers, timeout=timeout)
         
@@ -113,7 +136,8 @@ def resolve(
             output_dir=output_dir,
             venv_name=venv_name,
             display_result=not quiet,
-            max_workers=max_workers
+            max_workers=max_workers,
+            conflict_strategy=strategy
         )
         
         # Check if resolution was successful

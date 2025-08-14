@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from pkg_manager.core import PackageManager
-from pkg_manager.models import Environment
+from pkg_manager.models import Environment, ConflictResolutionStrategy
 
 app = typer.Typer(
     name="pkg-manager",
@@ -64,6 +64,21 @@ def resolve(
         False,
         "--requirements-only", "-r",
         help="Generate only requirements.txt file"
+    ),
+    conflict_strategy: str = typer.Option(
+        "auto",
+        "--conflict-strategy", "-c",
+        help="Strategy for resolving package conflicts (auto, manual, ignore, fail)"
+    ),
+    prefer_latest: bool = typer.Option(
+        True,
+        "--prefer-latest",
+        help="Prefer latest versions when resolving conflicts"
+    ),
+    allow_downgrade: bool = typer.Option(
+        False,
+        "--allow-downgrade",
+        help="Allow downgrading packages to resolve conflicts"
     )
 ):
     """
@@ -82,6 +97,13 @@ def resolve(
     """
     
     try:
+        # Create conflict resolution strategy
+        strategy = ConflictResolutionStrategy(
+            strategy=conflict_strategy,
+            prefer_latest=prefer_latest,
+            allow_downgrade=allow_downgrade
+        )
+        
         # Initialize package manager
         manager = PackageManager()
         
@@ -102,7 +124,8 @@ def resolve(
             platform=platform,
             output_dir=output_dir,
             venv_name=venv_name,
-            display_result=not quiet
+            display_result=not quiet,
+            conflict_strategy=strategy
         )
         
         # Check if resolution was successful

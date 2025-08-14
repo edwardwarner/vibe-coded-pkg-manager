@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.tree import Tree
 from rich import print as rprint
 
-from ..models import Environment, ResolutionResult
+from ..models import Environment, ResolutionResult, ConflictResolutionStrategy
 from ..clients import PyPIClient
 from ..resolvers import DependencyResolver
 from ..generators import ScriptGenerator
@@ -22,13 +22,14 @@ class PackageManager:
     def __init__(self):
         self.console = Console()
         self.pypi_client = PyPIClient()
-        self.resolver = DependencyResolver(self.pypi_client)
+        self.resolver = DependencyResolver()
         self.script_generator = ScriptGenerator()
     
     def resolve_packages(self, 
                         package_specs: List[str], 
                         python_version: str = "3.9",
-                        platform: str = "any") -> ResolutionResult:
+                        platform: str = "any",
+                        conflict_strategy: Optional[ConflictResolutionStrategy] = None) -> ResolutionResult:
         """Resolve package dependencies and find optimal versions."""
         
         environment = Environment(
@@ -39,7 +40,7 @@ class PackageManager:
         self.console.print(f"[bold blue]Resolving packages for Python {python_version}...[/bold blue]")
         
         # Resolve dependencies
-        result = self.resolver.resolve_dependencies(package_specs, environment)
+        result = self.resolver.resolve_dependencies(package_specs, environment, conflict_strategy)
         
         # Optimize versions
         optimized_result = self.resolver.optimize_versions(result, environment)
@@ -104,10 +105,18 @@ class PackageManager:
         self.console.print(table)
         
         # Display conflicts if any
-        if result.conflicts:
+        if result.package_conflicts:
             self.console.print("\n[bold red]Conflicts Found:[/bold red]")
-            for conflict in result.conflicts:
-                self.console.print(f"  • {conflict}")
+            for conflict in result.package_conflicts:
+                self.console.print(f"  • {conflict.package_name}: {conflict.reason}")
+                if conflict.resolution_suggestions:
+                    self.console.print(f"    Suggestions: {', '.join(conflict.resolution_suggestions[:3])}")
+        
+        # Display resolutions if any
+        if result.resolutions:
+            self.console.print("\n[bold green]Conflict Resolutions:[/bold green]")
+            for resolution in result.resolutions:
+                self.console.print(f"  ✅ {resolution.package_name}: {resolution.chosen_version} ({resolution.strategy_used})")
         
         # Display warnings if any
         if result.warnings:
@@ -151,7 +160,8 @@ class PackageManager:
             platform: str = "any",
             output_dir: str = ".",
             venv_name: str = "venv",
-            display_result: bool = True) -> dict:
+            display_result: bool = True,
+            conflict_strategy: Optional[ConflictResolutionStrategy] = None) -> dict:
         """Main method to run the package manager."""
         
         # Load packages
@@ -167,7 +177,7 @@ class PackageManager:
             raise ValueError("No packages specified")
         
         # Resolve packages
-        resolution_result = self.resolve_packages(package_specs, python_version, platform)
+        resolution_result = self.resolve_packages(package_specs, python_version, platform, conflict_strategy)
         
         # Display result if requested
         if display_result:

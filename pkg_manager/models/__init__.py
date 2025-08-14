@@ -8,7 +8,9 @@ from .models import (
     ResolvedPackage,
     Environment,
     ResolutionResult,
-    PackageConflict
+    PackageConflict,
+    ConflictResolutionStrategy,
+    ConflictResolution
 )
 
 __all__ = [
@@ -17,5 +19,7 @@ __all__ = [
     "ResolvedPackage",
     "Environment",
     "ResolutionResult",
-    "PackageConflict"
+    "PackageConflict",
+    "ConflictResolutionStrategy",
+    "ConflictResolution"
 ]

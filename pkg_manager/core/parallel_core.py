@@ -11,7 +11,7 @@ from rich.table import Table
 from rich.tree import Tree
 from rich import print as rprint
 
-from ..models import Environment, ResolutionResult
+from ..models import Environment, ResolutionResult, ConflictResolutionStrategy
 from ..clients import ParallelPyPIClient
 from ..resolvers import ParallelDependencyResolver
 from ..generators import ScriptGenerator
@@ -25,13 +25,14 @@ class ParallelPackageManager:
         self.max_workers = max_workers
         self.timeout = timeout
         self.pypi_client = ParallelPyPIClient(max_workers=max_workers, timeout=timeout)
-        self.resolver = ParallelDependencyResolver(self.pypi_client, max_workers=max_workers)
+        self.resolver = ParallelDependencyResolver(max_workers=max_workers, timeout=timeout)
         self.script_generator = ScriptGenerator()
     
     def resolve_packages(self, 
                         package_specs: List[str], 
                         python_version: str = "3.9",
-                        platform: str = "any") -> ResolutionResult:
+                        platform: str = "any",
+                        conflict_strategy: Optional[ConflictResolutionStrategy] = None) -> ResolutionResult:
         """Resolve package dependencies and find optimal versions using parallel processing."""
         
         environment = Environment(
@@ -44,7 +45,7 @@ class ParallelPackageManager:
         start_time = time.time()
         
         # Resolve dependencies
-        result = self.resolver.resolve_dependencies(package_specs, environment)
+        result = self.resolver.resolve_dependencies(package_specs, environment, conflict_strategy)
         
         # Optimize versions
         optimized_result = self.resolver.optimize_versions(result, environment)
@@ -112,10 +113,18 @@ class ParallelPackageManager:
         self.console.print(table)
         
         # Display conflicts if any
-        if result.conflicts:
+        if result.package_conflicts:
             self.console.print("\n[bold red]Conflicts Found:[/bold red]")
-            for conflict in result.conflicts:
-                self.console.print(f"  • {conflict}")
+            for conflict in result.package_conflicts:
+                self.console.print(f"  • {conflict.package_name}: {conflict.reason}")
+                if conflict.resolution_suggestions:
+                    self.console.print(f"    Suggestions: {', '.join(conflict.resolution_suggestions[:3])}")
+        
+        # Display resolutions if any
+        if result.resolutions:
+            self.console.print("\n[bold green]Conflict Resolutions:[/bold green]")
+            for resolution in result.resolutions:
+                self.console.print(f"  ✅ {resolution.package_name}: {resolution.chosen_version} ({resolution.strategy_used})")
         
         # Display warnings if any
         if result.warnings:
@@ -160,7 +169,8 @@ class ParallelPackageManager:
             output_dir: str = ".",
             venv_name: str = "venv",
             display_result: bool = True,
-            max_workers: Optional[int] = None) -> dict:
+            max_workers: Optional[int] = None,
+            conflict_strategy: Optional[ConflictResolutionStrategy] = None) -> dict:
         """Main method to run the parallel package manager."""
         
         # Update max_workers if specified
@@ -184,7 +194,7 @@ class ParallelPackageManager:
         self.console.print(f"[bold blue]Processing {len(package_specs)} packages with {self.max_workers} parallel workers[/bold blue]")
         
         # Resolve packages
-        resolution_result = self.resolve_packages(package_specs, python_version, platform)
+        resolution_result = self.resolve_packages(package_specs, python_version, platform, conflict_strategy)
         
         # Display result if requested
         if display_result:

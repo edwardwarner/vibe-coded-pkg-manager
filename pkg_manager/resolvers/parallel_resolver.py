@@ -8,16 +8,19 @@ from typing import List, Dict, Set, Optional, Tuple
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version, parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from ..models import PackageSpec, ResolvedPackage, ResolutionResult, Environment, PackageConflict
+from ..models import PackageSpec, ResolvedPackage, ResolutionResult, Environment, PackageConflict, ConflictResolutionStrategy
 from ..clients import ParallelPyPIClient
+from .conflict_resolver import ConflictResolver
 
 
 class ParallelDependencyResolver:
-    """Parallel resolver for package dependencies and optimal version combinations."""
+    """Resolves package dependencies using parallel processing."""
     
-    def __init__(self, pypi_client: ParallelPyPIClient, max_workers: int = 10):
-        self.pypi_client = pypi_client
+    def __init__(self, max_workers: int = 10, timeout: int = 30):
+        self.pypi_client = ParallelPyPIClient(max_workers=max_workers, timeout=timeout)
+        self.conflict_resolver = ConflictResolver(self.pypi_client)
         self.max_workers = max_workers
+        self.timeout = timeout
         self.resolved_packages: Dict[str, ResolvedPackage] = {}
         self.package_constraints: Dict[str, List[SpecifierSet]] = {}
         self.conflicts: List[PackageConflict] = []
@@ -51,13 +54,22 @@ class ParallelDependencyResolver:
         
         return PackageSpec(name=name.strip().lower(), version_spec=version.strip())
     
-    def resolve_dependencies(self, package_specs: List[str], environment: Environment) -> ResolutionResult:
+    def resolve_dependencies(
+        self, 
+        package_specs: List[str], 
+        environment: Environment,
+        conflict_strategy: Optional[ConflictResolutionStrategy] = None
+    ) -> ResolutionResult:
         """Resolve dependencies for the given package specifications using parallel processing."""
         start_time = time.time()
         
         self.resolved_packages.clear()
         self.package_constraints.clear()
         self.conflicts.clear()
+        
+        # Use default strategy if none provided
+        if conflict_strategy is None:
+            conflict_strategy = ConflictResolutionStrategy()
         
         # Parse package specifications
         specs = [self.parse_package_spec(spec) for spec in package_specs]
@@ -71,8 +83,26 @@ class ParallelDependencyResolver:
         # Resolve packages in parallel
         self._resolve_packages_parallel(specs, environment)
         
-        # Check for conflicts
-        self._detect_conflicts()
+        # Detect conflicts using the new conflict resolver
+        self.conflicts = self.conflict_resolver.detect_conflicts(
+            self.resolved_packages, self.package_constraints
+        )
+        
+        # Resolve conflicts if any
+        resolutions = []
+        if self.conflicts and conflict_strategy.strategy != "ignore":
+            try:
+                resolutions = self.conflict_resolver.resolve_conflicts(
+                    self.conflicts, conflict_strategy, environment
+                )
+                
+                # Apply resolutions
+                for resolution in resolutions:
+                    self.conflict_resolver.apply_resolution(resolution, self.resolved_packages)
+                    
+            except ValueError as e:
+                # If conflict resolution fails, return with conflicts
+                pass
         
         # Build dependency tree
         dependency_tree = self._build_dependency_tree()
@@ -83,8 +113,11 @@ class ParallelDependencyResolver:
         return ResolutionResult(
             packages=list(self.resolved_packages.values()),
             conflicts=[conflict.reason for conflict in self.conflicts],
-            success=len(self.conflicts) == 0,
-            dependency_tree=dependency_tree
+            package_conflicts=self.conflicts,
+            resolutions=resolutions,
+            success=len(self.conflicts) == 0 or len(resolutions) > 0,
+            dependency_tree=dependency_tree,
+            conflict_resolution_strategy=conflict_strategy
         )
     
     def _resolve_packages_parallel(self, specs: List[PackageSpec], environment: Environment):
@@ -229,21 +262,7 @@ class ParallelDependencyResolver:
         
         return self.parse_package_spec(dep_string)
     
-    def _detect_conflicts(self):
-        """Detect version conflicts between packages."""
-        for package_name, constraints in self.package_constraints.items():
-            if len(constraints) > 1:
-                # Check if constraints are compatible
-                intersection = constraints[0]
-                for constraint in constraints[1:]:
-                    intersection = intersection & constraint
-                
-                if not intersection:
-                    self.conflicts.append(PackageConflict(
-                        package_name=package_name,
-                        conflicting_versions=[str(c) for c in constraints],
-                        reason=f"Conflicting version constraints for {package_name}: {[str(c) for c in constraints]}"
-                    ))
+
     
     def _build_dependency_tree(self) -> Dict[str, List[str]]:
         """Build a dependency tree from resolved packages."""
