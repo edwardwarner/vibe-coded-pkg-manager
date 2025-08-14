@@ -80,5 +80,3 @@ logs/
 *.temp
 temp/
 tmp/
-
-.cursor_md/
