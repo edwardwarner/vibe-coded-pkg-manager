@@ -8,9 +8,9 @@ __version__ = "1.0.0"
 __author__ = "Package Manager Team"
 
 from .core import PackageManager, ParallelPackageManager
-from .resolvers import DependencyResolver, ParallelDependencyResolver
+from .resolvers import OptimizedDependencyResolver, OptimizedParallelDependencyResolver
 from .generators import ScriptGenerator
-from .clients import PyPIClient, ParallelPyPIClient
+from .clients import OptimizedPyPIClient, OptimizedParallelPyPIClient
 from .models import (
     PackageSpec,
     PackageInfo,
@@ -23,11 +23,11 @@ from .models import (
 __all__ = [
     "PackageManager",
     "ParallelPackageManager", 
-    "DependencyResolver",
-    "ParallelDependencyResolver",
+    "OptimizedDependencyResolver",
+    "OptimizedParallelDependencyResolver",
     "ScriptGenerator",
-    "PyPIClient",
-    "ParallelPyPIClient",
+    "OptimizedPyPIClient",
+    "OptimizedParallelPyPIClient",
     "PackageSpec",
     "PackageInfo",
     "ResolvedPackage", 

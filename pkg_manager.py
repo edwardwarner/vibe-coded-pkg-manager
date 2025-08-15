@@ -14,7 +14,7 @@ import time
 sys.path.insert(0, str(Path(__file__).parent))
 
 from pkg_manager.core import PackageManager, ParallelPackageManager
-from pkg_manager.models import Environment, ConflictResolutionStrategy
+from pkg_manager.models import Environment, ConflictResolutionStrategy, python_version_manager
 
 app = typer.Typer(
     name="pkg-manager",
@@ -235,6 +235,11 @@ def benchmark(
         "1,5,10,20",
         "--workers", "-w",
         help="Comma-separated list of worker counts to benchmark"
+    ),
+    compare_optimized: bool = typer.Option(
+        False,
+        "--compare-optimized",
+        help="Compare with optimized resolver"
     )
 ):
     """Benchmark different worker counts for package resolution."""
@@ -293,6 +298,54 @@ def benchmark(
         
         typer.echo()
         typer.echo(f"🏆 Best performance: {best_worker} workers ({results[best_worker]['duration']:.2f}s)")
+        
+        if compare_optimized:
+            typer.echo("\n" + "=" * 50)
+            typer.echo("OPTIMIZED RESOLVER COMPARISON")
+            typer.echo("=" * 50)
+            
+            # Test optimized resolver
+            from pkg_manager.resolvers.resolver import OptimizedDependencyResolver
+            from pkg_manager.models import Environment
+            
+            # Test sequential optimized
+            typer.echo("\nTesting optimized sequential resolver...")
+            start_time = time.time()
+            optimized_resolver = OptimizedDependencyResolver(use_parallel=False)
+            environment = Environment(python_version=python_version)
+            result = optimized_resolver.resolve_dependencies(package_list, environment)
+            optimized_seq_time = time.time() - start_time
+            
+            # Test parallel optimized
+            typer.echo("\nTesting optimized parallel resolver...")
+            start_time = time.time()
+            optimized_parallel_resolver = OptimizedDependencyResolver(use_parallel=True, max_workers=10)
+            result = optimized_parallel_resolver.resolve_dependencies(package_list, environment)
+            optimized_par_time = time.time() - start_time
+            
+            # Get performance stats
+            seq_stats = optimized_resolver.get_performance_stats()
+            par_stats = optimized_parallel_resolver.get_performance_stats()
+            
+            typer.echo(f"\nOptimized Sequential: {optimized_seq_time:.2f}s")
+            typer.echo(f"  Cache hit rate: {seq_stats['cache_hit_rate']:.1%}")
+            typer.echo(f"  API calls: {seq_stats['api_calls']}")
+            typer.echo(f"  Versions checked: {seq_stats['versions_checked']}")
+            
+            typer.echo(f"\nOptimized Parallel: {optimized_par_time:.2f}s")
+            typer.echo(f"  Cache hit rate: {par_stats['cache_hit_rate']:.1%}")
+            typer.echo(f"  API calls: {par_stats['api_calls']}")
+            typer.echo(f"  Versions checked: {par_stats['versions_checked']}")
+            typer.echo(f"  Parallel requests: {par_stats['parallel_requests']}")
+            
+            # Calculate improvements
+            best_original = results[best_worker]['duration']
+            improvement_seq = ((best_original - optimized_seq_time) / best_original) * 100
+            improvement_par = ((best_original - optimized_par_time) / best_original) * 100
+            
+            typer.echo(f"\nPerformance Improvements:")
+            typer.echo(f"  Optimized Sequential: {improvement_seq:+.1f}% faster")
+            typer.echo(f"  Optimized Parallel: {improvement_par:+.1f}% faster")
         
     except Exception as e:
         typer.echo(f"Error during benchmarking: {e}", err=True)
@@ -415,6 +468,106 @@ def info():
 
 
 @app.command()
+def python_versions(
+    list_versions: bool = typer.Option(False, "--list", "-l", help="List all supported Python versions"),
+    info: Optional[str] = typer.Option(None, "--info", "-i", help="Get information about a specific Python version"),
+    expand: Optional[str] = typer.Option(None, "--expand", "-e", help="Expand a major version (e.g., 3.12) to all specific versions"),
+    active_only: bool = typer.Option(False, "--active-only", "-a", help="Show only active (non-EOL) versions"),
+    latest_only: bool = typer.Option(False, "--latest-only", help="Show only latest versions for each major.minor")
+):
+    """Manage and query Python version information."""
+    
+    if list_versions or latest_only:
+        if latest_only:
+            typer.echo("🐍 Latest Python Versions:")
+            latest_versions = python_version_manager.get_latest_versions()
+            for major_minor, latest in latest_versions.items():
+                status = python_version_manager.get_version_status(major_minor)
+                typer.echo(f"  {major_minor}: {latest} ({status})")
+            return
+        elif active_only:
+            typer.echo("🐍 Active Python Versions:")
+            versions = python_version_manager.get_active_versions()
+        else:
+            typer.echo("🐍 All Supported Python Versions:")
+            versions = python_version_manager.get_all_supported_versions()
+        
+        for version in versions:
+            formatted = python_version_manager.format_version_display(version)
+            typer.echo(f"  {formatted}")
+    
+    elif info:
+        typer.echo(f"🐍 Python Version Information for {info}:")
+        
+        if not python_version_manager.is_valid_version(info):
+            typer.echo(f"❌ Invalid Python version: {info}")
+            return
+        
+        version_type = python_version_manager.get_version_type(info)
+        typer.echo(f"  Type: {version_type}")
+        
+        if version_type == "specific":
+            # Get major.minor version
+            version = python_version_manager.parse_version(info)
+            major_minor = f"{version.release[0]}.{version.release[1]}"
+            status = python_version_manager.get_version_status(major_minor)
+            typer.echo(f"  Status: {status}")
+            
+            # Check if it's the latest
+            latest = python_version_manager.get_latest_version(major_minor)
+            if info == latest:
+                typer.echo(f"  Latest: Yes (for {major_minor})")
+            else:
+                typer.echo(f"  Latest: No (latest is {latest})")
+        
+        elif version_type == "major":
+            # Get all supported versions for this major.minor
+            supported = python_version_manager.get_supported_versions(info)
+            latest = python_version_manager.get_latest_version(info)
+            status = python_version_manager.get_version_status(info)
+            
+            typer.echo(f"  Status: {status}")
+            typer.echo(f"  Latest: {latest}")
+            typer.echo(f"  Supported versions: {len(supported)}")
+            typer.echo(f"  Versions: {', '.join(supported[:5])}{'...' if len(supported) > 5 else ''}")
+    
+    elif expand:
+        typer.echo(f"🐍 Expanding Python version {expand}:")
+        
+        if not python_version_manager.is_valid_version(expand):
+            typer.echo(f"❌ Invalid Python version: {expand}")
+            return
+        
+        version_type = python_version_manager.get_version_type(expand)
+        if version_type == "specific":
+            typer.echo(f"  {expand} is already a specific version")
+            return
+        
+        expanded_versions = python_version_manager.expand_vague_version(expand)
+        if expanded_versions:
+            typer.echo(f"  Found {len(expanded_versions)} specific versions:")
+            for version in expanded_versions:
+                formatted = python_version_manager.format_version_display(version)
+                typer.echo(f"    {formatted}")
+        else:
+            typer.echo(f"  No specific versions found for {expand}")
+    
+    else:
+        typer.echo("Python Version Management")
+        typer.echo("\nAvailable commands:")
+        typer.echo("  --list, -l              List all supported Python versions")
+        typer.echo("  --info <version>, -i    Get information about a specific version")
+        typer.echo("  --expand <version>, -e  Expand a major version to specific versions")
+        typer.echo("  --active-only, -a       Show only active (non-EOL) versions")
+        typer.echo("  --latest-only           Show only latest versions for each major.minor")
+        typer.echo("\nExamples:")
+        typer.echo("  python pkg_manager.py python-versions --list")
+        typer.echo("  python pkg_manager.py python-versions --info 3.12.10")
+        typer.echo("  python pkg_manager.py python-versions --expand 3.12")
+        typer.echo("  python pkg_manager.py python-versions --active-only")
+
+
+@app.command()
 def example():
     """Show usage examples."""
     typer.echo("Usage Examples:")
@@ -430,6 +583,10 @@ def example():
     typer.echo("   python pkg_manager.py test-versions --packages 'requests,pandas,numpy' --python-versions '3.8,3.9,3.10,3.11'")
     typer.echo("\n5. Benchmark performance:")
     typer.echo("   python pkg_manager.py benchmark --packages 'requests,pandas,numpy,scipy,matplotlib' --workers '1,5,10,20'")
+    typer.echo("\n6. Python version management:")
+    typer.echo("   python pkg_manager.py python-versions --list")
+    typer.echo("   python pkg_manager.py python-versions --info 3.12.10")
+    typer.echo("   python pkg_manager.py python-versions --expand 3.12")
 
 
 def load_packages_from_file(file_path: str) -> List[str]:

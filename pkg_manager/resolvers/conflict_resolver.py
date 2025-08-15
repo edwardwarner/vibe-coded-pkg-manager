@@ -14,13 +14,13 @@ from ..models import (
     PackageSpec,
     ResolvedPackage
 )
-from ..clients import PyPIClient
+from ..clients.pypi_client import OptimizedPyPIClient
 
 
 class ConflictResolver:
     """Handles package conflict resolution with different strategies."""
     
-    def __init__(self, pypi_client: PyPIClient):
+    def __init__(self, pypi_client: OptimizedPyPIClient):
         self.pypi_client = pypi_client
     
     def resolve_conflicts(

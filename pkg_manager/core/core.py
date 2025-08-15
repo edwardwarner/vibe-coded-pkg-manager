@@ -11,8 +11,8 @@ from rich.tree import Tree
 from rich import print as rprint
 
 from ..models import Environment, ResolutionResult, ConflictResolutionStrategy
-from ..clients import PyPIClient
-from ..resolvers import DependencyResolver
+from ..clients.pypi_client import OptimizedPyPIClient
+from ..resolvers.resolver import OptimizedDependencyResolver
 from ..generators import ScriptGenerator
 
 
@@ -21,8 +21,8 @@ class PackageManager:
     
     def __init__(self):
         self.console = Console()
-        self.pypi_client = PyPIClient()
-        self.resolver = DependencyResolver()
+        self.pypi_client = OptimizedPyPIClient()
+        self.resolver = OptimizedDependencyResolver(use_parallel=False)
         self.script_generator = ScriptGenerator()
     
     def resolve_packages(self, 
@@ -42,10 +42,7 @@ class PackageManager:
         # Resolve dependencies
         result = self.resolver.resolve_dependencies(package_specs, environment, conflict_strategy)
         
-        # Optimize versions
-        optimized_result = self.resolver.optimize_versions(result, environment)
-        
-        return optimized_result
+        return result
     
     def generate_scripts(self, 
                         resolution_result: ResolutionResult,

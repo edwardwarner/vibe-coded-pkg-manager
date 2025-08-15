@@ -12,8 +12,8 @@ from rich.tree import Tree
 from rich import print as rprint
 
 from ..models import Environment, ResolutionResult, ConflictResolutionStrategy
-from ..clients import ParallelPyPIClient
-from ..resolvers import ParallelDependencyResolver
+from ..clients.parallel_pypi_client import OptimizedParallelPyPIClient
+from ..resolvers.parallel_resolver import OptimizedParallelDependencyResolver
 from ..generators import ScriptGenerator
 
 
@@ -24,8 +24,8 @@ class ParallelPackageManager:
         self.console = Console()
         self.max_workers = max_workers
         self.timeout = timeout
-        self.pypi_client = ParallelPyPIClient(max_workers=max_workers, timeout=timeout)
-        self.resolver = ParallelDependencyResolver(max_workers=max_workers, timeout=timeout)
+        self.pypi_client = OptimizedParallelPyPIClient(max_workers=max_workers, cache_ttl=3600)
+        self.resolver = OptimizedParallelDependencyResolver(max_workers=max_workers)
         self.script_generator = ScriptGenerator()
     
     def resolve_packages(self, 
@@ -47,13 +47,10 @@ class ParallelPackageManager:
         # Resolve dependencies
         result = self.resolver.resolve_dependencies(package_specs, environment, conflict_strategy)
         
-        # Optimize versions
-        optimized_result = self.resolver.optimize_versions(result, environment)
-        
         total_time = time.time() - start_time
         self.console.print(f"[bold green]Total resolution time: {total_time:.2f} seconds[/bold green]")
         
-        return optimized_result
+        return result
     
     def generate_scripts(self, 
                         resolution_result: ResolutionResult,

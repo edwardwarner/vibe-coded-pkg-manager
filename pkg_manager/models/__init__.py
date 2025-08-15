@@ -13,6 +13,8 @@ from .models import (
     ConflictResolution
 )
 
+from .python_versions import PythonVersionManager, python_version_manager
+
 __all__ = [
     "PackageSpec",
     "PackageInfo", 
@@ -21,5 +23,7 @@ __all__ = [
     "ResolutionResult",
     "PackageConflict",
     "ConflictResolutionStrategy",
-    "ConflictResolution"
+    "ConflictResolution",
+    "PythonVersionManager",
+    "python_version_manager"
 ]
